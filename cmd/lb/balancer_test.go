@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,9 +12,10 @@ import (
 )
 
 func (s *TestSuite) TestBalancer(t *testing.T) {
-	address1 := getServer("172.168.110.1:80")
-	address2 := getServer("192.168.100.10:8081")
-	address3 := getServer("127.0.0.1:8080")
+	var mutex sync.Mutex
+	address1 := getServer("172.168.110.1:80", &mutex)
+	address2 := getServer("192.168.100.10:8081", &mutex)
+	address3 := getServer("127.0.0.1:8080", &mutex)
 
 	assert.Equal(t, "127.0.0.1:8080", address1)
 	assert.Equal(t, "127.0.0.1:8081", address2)
@@ -22,6 +24,7 @@ func (s *TestSuite) TestBalancer(t *testing.T) {
 
 func (s *TestSuite) TestHealth(t *testing.T) {
 	result := make([]string, len(s.serversPool))
+	var mutex sync.Mutex
 
 	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -45,7 +48,7 @@ func (s *TestSuite) TestHealth(t *testing.T) {
 		"server3:8080",
 	}
 
-	checkServers(servers, result)
+	checkServers(servers, result, &mutex)
 	time.Sleep(12 * time.Second)
 
 	assert.Equal(t, hostURL1, result[0])
