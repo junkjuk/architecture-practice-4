@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/roman-mazur/design-practice-2-template/httptools"
@@ -65,9 +66,12 @@ func hash(address string) int {
 	return hashed
 }
 
-func getServer(address string) string {
+func getServer(address string, mutex *sync.Mutex) string {
+	mutex.Lock()
 	clientHash := hash(address) % len(aliveServersPool)
-	return aliveServersPool[clientHash]
+	serverAddr := aliveServersPool[clientHash]
+	mutex.Unlock()
+	return serverAddr
 }
 
 func forward(dst string, rw http.ResponseWriter, r *http.Request) error {
@@ -103,12 +107,13 @@ func forward(dst string, rw http.ResponseWriter, r *http.Request) error {
 	}
 }
 
-func checkServers(servers []string, aliveServers []string) {
+func checkServers(servers []string, aliveServers []string, mutex *sync.Mutex) {
 	for index, server := range servers {
 		server := server
 		index := index
 		go func() {
 			for range time.Tick(10 * time.Second) {
+				mutex.Lock()
 				isHealth := health(server)
 				log.Println(server, isHealth)
 				if isHealth {
@@ -116,6 +121,7 @@ func checkServers(servers []string, aliveServers []string) {
 				} else {
 					aliveServers[index] = ""
 				}
+				mutex.Unlock()
 			}
 		}()
 	}
@@ -123,11 +129,11 @@ func checkServers(servers []string, aliveServers []string) {
 
 func main() {
 	flag.Parse()
+	var mutex sync.Mutex
 
-	checkServers(serversPool, aliveServersPool)
-
+	checkServers(serversPool, aliveServersPool, &mutex)
 	frontend := httptools.CreateServer(*port, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		server := getServer(r.RemoteAddr)
+		server := getServer(r.RemoteAddr, &mutex)
 		forward(server, rw, r)
 	}))
 
